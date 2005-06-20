@@ -1,0 +1,91 @@
+#!/bin/perl -w
+
+use POSIX;
+use strict;
+
+my $serialport = '/dev/ttyS0';
+
+sub initport($) {
+  my $serialport = shift;
+  sysopen PORT, $serialport, O_RDWR | O_NOCTTY | O_NONBLOCK
+    or die "$! opening device $serialport\n";
+
+  my $termios = new POSIX::Termios;
+  $termios->getattr(fileno PORT);
+  $termios->setcflag(CS8 | CREAD | CLOCAL);
+  $termios->setiflag(0);
+  $termios->setlflag(0);
+  $termios->setoflag(0);
+
+  sub B57600 { 0010001 };
+  $termios->setospeed(&B57600);
+  $termios->setispeed(&B57600);
+
+  $termios->setattr(fileno PORT, TCSAFLUSH);
+  tcflush(fileno PORT, TCIOFLUSH);
+  return *PORT;
+}
+
+sub sendrequest($$) {
+  my ($fh, $req, $sum, $asc) = (shift, shift, 0, 0);
+  foreach $asc (unpack 'C*', $req) {
+    $sum ^= $asc;
+  }
+  $req = sprintf "\$%s*%02X\015\012", $req, $sum;
+  syswrite $fh, $req, length $req;
+}
+
+sub getresponse($) {
+  my ($fh, $response) = (shift, "");
+  until ($response =~ /\021$/s) {
+    my $rin = ""; vec($rin, fileno $fh, 1) = 1;
+    last unless (select $rin, undef, $rin, 0.5)[0] > 0;
+    my $bytes; sysread $fh, $bytes, 16384;
+    $response .= $bytes;
+  };
+  $response =~ s/^\023//s;
+  $response =~ s/\021$//s;
+  $response =~ s/\015?\012/\n/sg;
+  return $response;
+}
+
+sub listtracks($) {
+  my ($fh, $list) = (shift, "");
+  sendrequest $fh, 'PBRTL,';
+  my $response = getresponse $fh;
+  foreach my $line (split /\n+/, $response) {
+    if ($line =~ /^\$PBRTL,\d*,(\d*),([\d.]*),([\d:]*),([\d:]*)(\*[A-F\d]+)?$/i) {
+      my ($id, $date, $time, $duration) = ($1, $2, $3, $4);
+      $date =~ s/^(\d{2})\.(\d{2})\.(\d{2})$/20$3-$2-$1/;
+      $list .= sprintf "%2s  %-10s  %-8s  %-8s\n", $id, $date, $time, $duration;
+    }
+  }
+  $list = sprintf "%2s  %-10s  %-8s  %-8s\n%s", "Id", "Date", "Time",
+                  "Duration", $list unless $list eq "";
+  return $list;
+}
+
+sub gettrack($$) {
+  my ($fh, $num) = (shift, shift);
+  sendrequest $fh, ($num >= 0 ? sprintf 'PBRTR,%02d', $num : 'PBRIGC,');
+  return getresponse $fh;
+}
+
+sub usage() {
+  print STDERR <<"EOF";
+Usage: compeoigc          list tracks stored on device
+       compeoigc -1       output last viewed track in IGC format
+       compeoigc TRACKNO  output specified track in IGC format
+Serial port: $serialport
+EOF
+  exit 1;
+}
+
+my $fh = initport $serialport;
+if (@ARGV == 0) {
+  print listtracks $fh;
+} elsif ($ARGV[0] =~ /^-?\d+$/) {
+  print gettrack $fh, $ARGV[0];
+} else {
+  usage();
+}
