@@ -1,5 +1,6 @@
 #!/bin/perl -w
 
+use Getopt::Std;
 use POSIX;
 use strict;
 
@@ -42,11 +43,26 @@ sub getresponse($) {
     last unless (select $rin, undef, $rin, 0.5)[0] > 0;
     my $bytes; sysread $fh, $bytes, 16384;
     $response .= $bytes;
-  };
+  }
   $response =~ s/^\023//s;
   $response =~ s/\021$//s;
   $response =~ s/\015?\012/\n/sg;
   return $response;
+}
+
+sub getinfo($) {
+  my ($fh, $response) = (shift, "");
+  sendrequest $fh, 'PBRSNP,';
+  $response = getresponse $fh;
+  if ($response =~ /^\$PBRSNP,(.*?)(\*[A-F\d]+)?$/i) {
+    my ($instrument, $pilot, $serial, $version) = split /,\s*/, $1;
+    return <<"EOF";
+Instrument: $instrument (serial number $serial, version $version)
+Pilot name: $pilot
+EOF
+  } else {
+    return "";
+  }
 }
 
 sub listtracks($) {
@@ -71,21 +87,97 @@ sub gettrack($$) {
   return getresponse $fh;
 }
 
+sub getall($) {
+  my $fh = shift;
+  sendrequest $fh, 'PBRTL,';
+  my $response = getresponse $fh;
+
+  my (%track, %index);
+  foreach my $line (split /\n+/, $response) {
+    if ($line =~ /^\$PBRTL,\d*,(\d*),([\d.]*),([\d:]*),([\d:]*)(\*[A-F\d]+)?$/i) {
+      my ($id, $date, $time) = ($1, $2, $3);
+      $date =~ s/^(\d{2})\.(\d{2})\.(\d{2})$/20$3-$2-$1/;
+      $time =~ s/^(\d{2}):(\d{2}):\d{2}$/$1:$2/;
+      my $name = "$date-$time";
+      if (defined $index{$name}) {
+        unless (defined $index{"$name-1"}) {
+          $index{"$name-1"} = $index{$name};
+          $track{$index{$name}} = "$name-1";
+        }
+        my $i = 2; $i++ while defined $index{"$name-$i"};
+        $name .= "-$i";
+      }
+      $track{$id} = $name;
+      $index{$name} = $id;
+    }
+  }
+
+  my $success = 0;
+  foreach my $id (sort keys %track) {
+    my $igcdata = gettrack $fh, $id;
+    if ($igcdata eq "") {
+      warn "Failed to download track #$id\n";
+    } elsif (sysopen TRACK, "$track{$id}.igc", O_WRONLY | O_CREAT | O_EXCL) {
+      print TRACK $igcdata;
+      close TRACK;
+      $success++;
+    } else {
+      warn "File '$track{$id}.igc' already exists or can't be created\n";
+    }
+  }
+
+  my $total = keys %track;
+  if ($success == $total) {
+    return "Successfully downloaded all $success tracks\n";
+  } elsif ($success > 0) {
+    return "Successfully downloaded $success tracks of $total\n";
+  } else {
+    return "No tracks downloaded\n";
+  }
+}
+
 sub usage() {
   print STDERR <<"EOF";
-Usage: compeoigc          list tracks stored on device
-       compeoigc -1       output last viewed track in IGC format
-       compeoigc TRACKNO  output specified track in IGC format
-Serial port: $serialport
+Usage: compeoigc [-d PORT] [list]   list tracks stored on device
+       compeoigc [-d PORT] info     display device/pilot info
+       compeoigc [-d PORT] current  output last viewed track in IGC format
+       compeoigc [-d PORT] TRACKNO  output specified track in IGC format
+       compeoigc [-d PORT] all      download all tracks in IGC format
+Default serial port: $serialport
 EOF
   exit 1;
 }
 
+sub HELP_MESSAGE { usage; }
+sub VERSION_MESSAGE { usage; }
+
+my %option = ();
+getopts "d:", \%option or usage;
+$serialport = $option{d} if defined $option{d};
 my $fh = initport $serialport;
+
+my ($command, $response);
 if (@ARGV == 0) {
-  print listtracks $fh;
-} elsif ($ARGV[0] =~ /^-?\d+$/) {
-  print gettrack $fh, $ARGV[0];
+  $command = 'list';
+} elsif (@ARGV == 1) {
+  $command = lc $ARGV[0];
 } else {
   usage();
 }
+
+if ($command eq 'list') {
+  $response = listtracks $fh;
+} elsif ($command eq 'info') {
+  $response = getinfo $fh;
+} elsif ($command eq 'current') {
+  $response = gettrack $fh, -1;
+} elsif ($command eq 'all') {
+  $response = getall $fh;
+} elsif ($command =~ /^\d+$/) {
+  $response = gettrack $fh, $command;
+} else {
+  usage();
+}
+
+print $response;
+exit ($response eq "" ? 1 : 0);
