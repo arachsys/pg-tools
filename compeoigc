@@ -27,48 +27,39 @@ sub initport($) {
   return *PORT;
 }
 
-sub sendrequest($$) {
-  my ($fh, $req, $sum, $asc) = (shift, shift, 0, 0);
+sub request($$) {
+  my ($fh, $req, $sum, $asc, $res) = (shift, shift, 0, 0, "");
   foreach $asc (unpack 'C*', $req) {
     $sum ^= $asc;
   }
   $req = sprintf "\$%s*%02X\015\012", $req, $sum;
   syswrite $fh, $req, length $req;
-}
 
-sub getresponse($) {
-  my ($fh, $response) = (shift, "");
-  until ($response =~ /\021$/s) {
+  until ($res =~ /\021$/s) {
     my $rin = ""; vec($rin, fileno $fh, 1) = 1;
     last unless (select $rin, undef, $rin, 0.5)[0] > 0;
     my $bytes; sysread $fh, $bytes, 16384;
-    $response .= $bytes;
+    $res .= $bytes;
   }
-  $response =~ s/^\023//s;
-  $response =~ s/\021$//s;
-  $response =~ s/\015?\012/\n/sg;
-  return $response;
+  $res =~ s/^\023//s; $res =~ s/\021$//s; $res =~ s/\015?\012/\n/sg;
+  return $res;
 }
 
 sub getinfo($) {
-  my ($fh, $response) = (shift, "");
-  sendrequest $fh, 'PBRSNP,';
-  $response = getresponse $fh;
+  my $fh = shift;
+  my $response = request $fh, 'PBRSNP,';
   if ($response =~ /^\$PBRSNP,(.*?)(\*[A-F\d]+)?$/i) {
     my ($instrument, $pilot, $serial, $version) = split /,\s*/, $1;
-    return <<"EOF";
+    print <<"EOF";
 Instrument: $instrument (serial number $serial, version $version)
 Pilot name: $pilot
 EOF
-  } else {
-    return "";
   }
 }
 
 sub listtracks($) {
   my ($fh, $list) = (shift, "");
-  sendrequest $fh, 'PBRTL,';
-  my $response = getresponse $fh;
+  my $response = request $fh, 'PBRTL,';
   foreach my $line (split /\n+/, $response) {
     if ($line =~ /^\$PBRTL,\d*,(\d*),([\d.]*),([\d:]*),([\d:]*)(\*[A-F\d]+)?$/i) {
       my ($id, $date, $time, $duration) = ($1, $2, $3, $4);
@@ -76,21 +67,18 @@ sub listtracks($) {
       $list .= sprintf "%2s  %-10s  %-8s  %-8s\n", $id, $date, $time, $duration;
     }
   }
-  $list = sprintf "%2s  %-10s  %-8s  %-8s\n%s", "Id", "Date", "Time",
-                  "Duration", $list unless $list eq "";
-  return $list;
+  printf "%2s  %-10s  %-8s  %-8s\n%s", "Id", "Date", "Time", "Duration", $list
+    unless $list eq "";
 }
 
 sub gettrack($$) {
   my ($fh, $num) = (shift, shift);
-  sendrequest $fh, ($num >= 0 ? sprintf 'PBRTR,%02d', $num : 'PBRIGC,');
-  return getresponse $fh;
+  return request $fh, ($num >= 0 ? sprintf 'PBRTR,%02d', $num : 'PBRIGC,');
 }
 
 sub getall($) {
   my $fh = shift;
-  sendrequest $fh, 'PBRTL,';
-  my $response = getresponse $fh;
+  my $response = request $fh, 'PBRTL,';
 
   my (%track, %index);
   foreach my $line (split /\n+/, $response) {
@@ -128,11 +116,11 @@ sub getall($) {
 
   my $total = keys %track;
   if ($success == $total) {
-    return "Successfully downloaded all $success tracks\n";
+    print STDERR "Successfully downloaded all $success tracks\n";
   } elsif ($success > 0) {
-    return "Successfully downloaded $success tracks of $total\n";
+    print STDERR "Successfully downloaded $success tracks of $total\n";
   } else {
-    return "No tracks downloaded\n";
+    print STDERR "No tracks downloaded\n";
   }
 }
 
@@ -156,28 +144,18 @@ getopts "d:", \%option or usage;
 $serialport = $option{d} if defined $option{d};
 my $fh = initport $serialport;
 
-my ($command, $response);
-if (@ARGV == 0) {
-  $command = 'list';
-} elsif (@ARGV == 1) {
-  $command = lc $ARGV[0];
-} else {
-  usage();
-}
-
+my $command = (@ARGV == 0 ? 'list' : lc shift @ARGV);
+usage unless @ARGV == 0;
 if ($command eq 'list') {
-  $response = listtracks $fh;
+  listtracks $fh;
 } elsif ($command eq 'info') {
-  $response = getinfo $fh;
+  getinfo $fh;
 } elsif ($command eq 'current') {
-  $response = gettrack $fh, -1;
+  print gettrack $fh, -1;
 } elsif ($command eq 'all') {
-  $response = getall $fh;
+  getall $fh;
 } elsif ($command =~ /^\d+$/) {
-  $response = gettrack $fh, $command;
+  print gettrack $fh, $command;
 } else {
-  usage();
+  usage;
 }
-
-print $response;
-exit ($response eq "" ? 1 : 0);
