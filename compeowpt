@@ -177,6 +177,8 @@ sub VERSION_MESSAGE { usage; }
 
 my %option = ();
 getopts "d:", \%option or usage;
+usage if @ARGV > 0 and lc $ARGV[0] eq 'help';
+
 $serialport = $ENV{COMPEO} if defined $ENV{COMPEO};
 $serialport = $option{d} if defined $option{d};
 my $fh = initport $serialport;
