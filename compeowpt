@@ -73,7 +73,7 @@ sub clearpoints($) {
 
 sub addpoints($) {
   my $fh = shift;
-  while (my $line = <>) {
+  while (my $line = <STDIN>) {
     chomp $line;
     my ($latitude, $longitude, $altitude, $name) = split /\s*,\s*/, $line, 4;
     return unless $latitude =~ /^[-+]?\d+(\.\d+)?$/;
@@ -88,13 +88,86 @@ sub addpoints($) {
   }
 }
 
+sub listroutes($) {
+  my $fh = shift;
+  my $response = request $fh, 'PBRRTS,';
+  foreach (split /\n+/, $response) {
+    next unless /^\$PBRRTS,(\d+),(\d+),(\d+),(.*?)(\*[A-F\d]+)?$/i;
+    if ($3 == 0) {
+      my $name = $4; $name =~ s/\s+$//;
+      print $name, "\n";
+    }
+  }
+}
+
+sub getroute($$) {
+  my ($fh, $id) = (shift, undef);
+  my $name = sprintf '%-17.17s', shift;
+  my $response = request $fh, 'PBRRTS,';
+  foreach (split /\n+/, $response) {
+    next unless /^\$PBRRTS,(\d+),(\d+),(\d+),(.*?)(\*[A-F\d]+)?$/i;
+    $id = $2 if $3 == 0 and $name eq $4;
+    if ($3 > 0 and defined $id and $2 == $id) {
+      my $waypoint = (split /,/, $4, 2)[1];
+      $waypoint =~ s/\s+$//;
+      print $waypoint, "\n";
+    }
+  }
+}
+
+sub delroute($$) {
+  my ($fh, $name) = (shift, shift);
+  my $request = sprintf "PBRRTX,%-17.17s", $name;
+  request $fh, $request;
+}
+
+sub clearroutes($) {
+  my $fh = shift;
+  request $fh, 'PBRRTX,,';
+}
+
+sub putroute($$) {
+  my ($fh, $id) = (shift, undef);
+  my $name = sprintf '%-17.17s', shift;
+
+  if ($name eq 'COMPETITION-ROUTE') {
+    $id = 0;
+  } else {
+    my %routes = ();
+    my $response = request $fh, 'PBRRTS,';
+    foreach (split /\n+/, $response) {
+      next unless /^\$PBRRTS,(\d+),(\d+),(\d+),(.*?)(\*[A-F\d]+)?$/i;
+      $id = int $2 if $3 == 0 and $name eq $4;
+      $routes{int $2} = $4;
+    }
+    unless (defined $id) {
+      $id = 1; $id++ while defined $routes{$id};
+    }
+  }
+
+  my @route; while (<STDIN>) { chomp; push @route, $_; }
+
+  my ($index, $length) = (1, 1 + @route);
+  request $fh, sprintf 'PBRRTR,%02d,%02d,00,%s', $id, $length, $name;
+  request $fh, sprintf 'PBRRTR,%02d,%02d,%02d,,%-17.17s', $id, $length,
+                       $index++, shift @route while @route;
+}
+
 sub usage() {
   print STDERR <<"EOF";
 Usage: compeowpt [-d PORT] [list]         list waypoints stored on device
        compeowpt [-d PORT] add [FILE]...  add new waypoints to device
        compeowpt [-d PORT] del NAME       delete waypoint NAME from device
        compeowpt [-d PORT] clear          delete all waypoints from device
+       compeowpt [-d PORT] listroutes     list routes stored on device
+       compeowpt [-d PORT] getroute NAME  read route NAME from device
+       compeowpt [-d PORT] putroute NAME  send route NAME to device
+       compeowpt [-d PORT] delroute NAME  delete route NAME from device
+       compeowpt [-d PORT] clearroutes    delete all routes from device
 Default serial port: $serialport
+
+Waypoint and route names are case-sensitive and at most 17 chars long.
+Use the route name 'COMPETITION-ROUTE' for the special competition route.
 EOF
   exit 1;
 }
@@ -112,11 +185,35 @@ my $command = (@ARGV == 0 ? 'list' : lc shift @ARGV);
 if ($command eq 'list' and @ARGV == 0) {
   listpoints $fh;
 } elsif ($command eq 'add') {
-  addpoints $fh;
+  addpoints $fh if @ARGV == 0;
+  while (@ARGV > 0) {
+    my $file = shift @ARGV;
+    if (sysopen STDIN, $file, O_RDONLY) {
+      addpoints $fh;
+    } else {
+      warn "Can't open $file: $!\n";
+    }
+  }
 } elsif ($command eq 'del' and @ARGV == 1) {
   delpoint $fh, $ARGV[0];
 } elsif ($command eq 'clear' and @ARGV == 0) {
   clearpoints $fh;
+} elsif ($command eq 'listroutes' and @ARGV == 0) {
+  listroutes $fh;
+} elsif ($command eq 'getroute' and @ARGV == 1) {
+  getroute $fh, $ARGV[0];
+} elsif ($command eq 'putroute' and @ARGV == 1) {
+  putroute $fh, $ARGV[0];
+} elsif ($command eq 'putroute' and @ARGV == 2) {
+  if (sysopen STDIN, $ARGV[1], O_RDONLY) {
+    putroute $fh, $ARGV[0];
+  } else {
+    die "Can't open $ARGV[1]: $!\n";
+  }
+} elsif ($command eq 'delroute' and @ARGV == 1) {
+  delroute $fh, $ARGV[0];
+} elsif ($command eq 'clearroutes' and @ARGV == 0) {
+  clearroutes $fh;
 } else {
-  usage();
+  usage;
 }
