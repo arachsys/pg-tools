@@ -1,0 +1,114 @@
+#!/bin/perl -w
+
+use Getopt::Std;
+use POSIX;
+use strict;
+
+my $serialport = '/dev/ttyS0';
+
+sub initport($) {
+  my $serialport = shift;
+  sysopen PORT, $serialport, O_RDWR | O_NOCTTY | O_NONBLOCK
+    or die "$! opening device $serialport\n";
+
+  my $termios = new POSIX::Termios;
+  $termios->getattr(fileno PORT);
+  $termios->setcflag(CS8 | CREAD | CLOCAL);
+  $termios->setiflag(0);
+  $termios->setlflag(0);
+  $termios->setoflag(0);
+
+  sub B57600 { 0010001 };
+  $termios->setospeed(&B57600);
+  $termios->setispeed(&B57600);
+
+  $termios->setattr(fileno PORT, TCSAFLUSH);
+  tcflush(fileno PORT, TCIOFLUSH);
+  return *PORT;
+}
+
+sub request($$) {
+  my ($fh, $req, $sum, $asc, $res) = (shift, shift, 0, 0, "");
+  foreach $asc (unpack 'C*', $req) {
+    $sum ^= $asc;
+  }
+  $req = sprintf "\$%s*%02X\015\012", $req, $sum;
+  syswrite $fh, $req, length $req;
+
+  until ($res =~ /\021$/s) {
+    my $rin = ""; vec($rin, fileno $fh, 1) = 1;
+    last unless (select $rin, undef, $rin, 0.5)[0] > 0;
+    my $bytes; sysread $fh, $bytes, 16384;
+    $res .= $bytes;
+  }
+  $res =~ s/^\023//s; $res =~ s/\021$//s; $res =~ s/\015?\012/\n/sg;
+  return $res;
+}
+
+sub checkmodel($) {
+  my $fh = shift;
+  my $response = request $fh, "PBRSNP,";
+  die "Instrument not responding\n" unless $response =~ /^\$PBRSNP,/i;
+
+  my $model = (split /,/, $response)[1];
+  return if uc $model eq 'COMPEO' or $model eq '5030';
+  return if uc $model eq 'COMPETINO' or $model eq '5020';
+
+  print STDERR <<"EOF";
+Your instrument type '$model' is not recognised. This utility uses a
+manufacturer-specific NMEA sentence to set pilot and glider information on
+supported Braeuniger/Flytec instruments, writing data directly to EEPROM
+locations known to be correct only for these models. If you are sure that your
+instrument stores these fields in the same locations as the Compeo/5030 and
+Competino/5020, you can use the -f option to override this check and report
+your success (or otherwise) to Chris Webb <chris\@arachsys.com>.
+EOF
+}
+
+sub writemem($$$) {
+  my ($fh, $address, $data) = (shift, shift, shift);
+  while ($data ne "") {
+    my @bytes = unpack 'C8', $data;
+    my $request = sprintf 'PBRMEMW,%04X,%d,%s', $address, scalar @bytes,
+                          join ',', map { sprintf '%02X', $_ } @bytes;
+    request $fh, $request;
+    substr($data, 0, 8) = "";
+    $address += @bytes;
+  }
+  request $fh, 'PBRCONF,';
+}
+
+sub usage() {
+  print STDERR <<"EOF";
+Usage: compeoset [-d PORT] [-f] pilot NAME       set pilot name to NAME
+       compeoset [-d PORT] [-f] glidertype TYPE  set glider type to TYPE
+       compeoset [-d PORT] [-f] gliderid ID      set glider id to ID
+Default serial port: $serialport
+EOF
+  exit 1;
+}
+
+sub HELP_MESSAGE { usage; }
+sub VERSION_MESSAGE { usage; }
+
+my %option = ();
+getopts "d:f", \%option or usage;
+usage if @ARGV > 0 and lc $ARGV[0] eq 'help';
+
+$serialport = $ENV{COMPEO} if defined $ENV{COMPEO};
+$serialport = $option{d} if defined $option{d};
+my $fh = initport $serialport;
+
+usage unless @ARGV == 2;
+if ($ARGV[0] eq 'pilot') {
+  checkmodel $fh unless $option{f};
+  writemem $fh, 0, sprintf '%-16.16s', $ARGV[1];
+} elsif ($ARGV[0] eq 'glidertype') {
+  checkmodel $fh unless $option{f};
+  writemem $fh, 192, sprintf '%-16.16s', $ARGV[1];
+} elsif ($ARGV[0] eq 'gliderid') {
+  checkmodel $fh unless $option{f};
+  writemem $fh, 224, sprintf '%-16.16s', $ARGV[1];
+} else {
+  usage;
+}
