@@ -141,6 +141,7 @@ sub VERSION_MESSAGE { usage; }
 
 my %option = ();
 getopts "d:", \%option or usage;
+$serialport = $ENV{COMPEO} if defined $ENV{COMPEO};
 $serialport = $option{d} if defined $option{d};
 my $fh = initport $serialport;
 
