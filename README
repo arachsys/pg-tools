@@ -210,6 +210,15 @@ Competino/5020 bugs which directly affect this software include:-
     competition route so you can remove all of the waypoints appears to be
     by deleting all waypoints and routes via the instrument menu.
 
+  * The IGC GNSS FR specification defines the B record barometric altitude
+    as "having a fixed sea-level datum of 1013.25 HPa at 15 degrees C (i.e. 
+    recording flight levels rather than height above ground or sea-level)"
+    but the Braeuniger/Flytec device simply records the value of altimeter
+    A1. This altimeter can be offset by the pilot, typically being set to
+    match GPS height at the beginning of a flight. Moreoever, the offset
+    from standard flight levels is not available in the IGC file so the
+    error cannot be corrected by post-processing.
+
 These problems were still present in version 1.18 of the Competino/5020
 firmware, dated April 2007. I would be grateful to hear from users of the
 Compeo/5030, Compeo+/6030, and Competino+/6020 whether or not the latest
