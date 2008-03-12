@@ -103,9 +103,8 @@ sub getall($) {
   my $success = 0;
   foreach my $id (sort keys %track) {
     my $igcdata = gettrack $fh, $id;
-    if ($igcdata eq "") {
-      warn "Failed to download track #$id\n";
-    } elsif (sysopen TRACK, "$track{$id}.igc", O_WRONLY | O_CREAT | O_EXCL) {
+    warn "Failed to download track #$id\n" and next if $igcdata eq "";
+    if (sysopen TRACK, "$track{$id}.igc", O_WRONLY | O_CREAT | O_EXCL) {
       print TRACK $igcdata;
       close TRACK;
       $success++;
@@ -143,9 +142,13 @@ my %option = ();
 getopts "d:", \%option or usage;
 usage if @ARGV > 0 and lc $ARGV[0] eq 'help';
 
-$serialport = $ENV{COMPEO} if defined $ENV{COMPEO};
-$serialport = $option{d} if defined $option{d};
+if ($> == $< and $) == $() {
+  $serialport = $ENV{COMPEO} if defined $ENV{COMPEO};
+  $serialport = $option{d} if defined $option{d};
+}
 my $fh = initport $serialport;
+$> = $< unless $> == $<;
+$) = $( unless $) == $(;
 
 my $command = (@ARGV == 0 ? 'list' : lc shift @ARGV);
 usage unless @ARGV == 0;
