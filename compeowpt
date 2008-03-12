@@ -161,13 +161,15 @@ Usage: compeowpt [-d PORT] [list]         list waypoints stored on device
        compeowpt [-d PORT] clear          delete all waypoints from device
        compeowpt [-d PORT] listroutes     list routes stored on device
        compeowpt [-d PORT] getroute NAME  read route NAME from device
+       compeowpt [-d PORT] gettask        read competition route from device
        compeowpt [-d PORT] putroute NAME  send route NAME to device
+       compeowpt [-d PORT] puttask        send competition route to device
        compeowpt [-d PORT] delroute NAME  delete route NAME from device
        compeowpt [-d PORT] clearroutes    delete all routes from device
 Default serial port: $serialport
 
 Waypoint and route names are case-sensitive and at most 17 chars long.
-Use the route name 'COMPETITION-ROUTE' for the special competition route.
+The route name 'COMPETITION-ROUTE' refers to the special competition route.
 EOF
   exit 1;
 }
@@ -208,13 +210,23 @@ if ($command eq 'list' and @ARGV == 0) {
   listroutes $fh;
 } elsif ($command eq 'getroute' and @ARGV == 1) {
   getroute $fh, $ARGV[0];
+} elsif ($command eq 'gettask' and @ARGV == 0) {
+  getroute $fh, 'COMPETITION-ROUTE';
 } elsif ($command eq 'putroute' and @ARGV == 1) {
   putroute $fh, $ARGV[0];
+} elsif ($command eq 'puttask' and @ARGV == 0) {
+  putroute $fh, 'COMPETITION-ROUTE';
 } elsif ($command eq 'putroute' and @ARGV == 2) {
   if (sysopen STDIN, $ARGV[1], O_RDONLY) {
     putroute $fh, $ARGV[0];
   } else {
     die "Can't open $ARGV[1]: $!\n";
+  }
+} elsif ($command eq 'puttask' and @ARGV == 1) {
+  if (sysopen STDIN, $ARGV[0], O_RDONLY) {
+    putroute $fh, 'COMPETITION-ROUTE';
+  } else {
+    die "Can't open $ARGV[0]: $!\n";
   }
 } elsif ($command eq 'delroute' and @ARGV == 1) {
   delroute $fh, $ARGV[0];

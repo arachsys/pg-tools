@@ -137,9 +137,15 @@ Usage: compeowpt [-d PORT] clear
 
 Usage: compeowpt [-d PORT] getroute NAME
 
-  Read the route NAME from device, listing the waypoint names on successive
-  lines of STDOUT. The special route name 'COMPETITION-ROUTE' can be used to
-  retrieve the competition route.
+  Read the route NAME from the device, listing the waypoint names on
+  successive lines of STDOUT. The special route name 'COMPETITION-ROUTE' can
+  be used to retrieve the competition route.
+
+Usage: compeowpt [-d PORT] gettask
+
+  Read the competition route from the device, listing the waypoint names on
+  successive lines of STDOUT. This is equivalent to using a name of
+  COMPETITION-ROUTE with the getroute subcommand.
 
 Usage: compeowpt [-d PORT] putroute NAME
 
@@ -147,6 +153,13 @@ Usage: compeowpt [-d PORT] putroute NAME
   route as NAME on the device. If a route of the given name already exists,
   it is replaced, otherwise a new route is created. The competition route
   can be specified as 'COMPETITION-ROUTE'.
+
+Usage: compeowpt [-d PORT] puttask
+
+  Read waypoint names from successive lines of STDIN and store the resulting
+  route as the competition route on the device, replacing any existing
+  competition route. This is equivalent to using a name of COMPETITION-ROUTE
+  with the putroute subcommand.
 
 Usage: compeowpt [-d PORT] delroute NAME
 
