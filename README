@@ -147,19 +147,19 @@ Usage: compeowpt [-d PORT] gettask
   successive lines of STDOUT. This is equivalent to using a name of
   COMPETITION-ROUTE with the getroute subcommand.
 
-Usage: compeowpt [-d PORT] putroute NAME
+Usage: compeowpt [-d PORT] setroute NAME
 
   Read waypoint names from successive lines of STDIN and store the resulting
   route as NAME on the device. If a route of the given name already exists,
   it is replaced, otherwise a new route is created. The competition route
   can be specified as 'COMPETITION-ROUTE'.
 
-Usage: compeowpt [-d PORT] puttask
+Usage: compeowpt [-d PORT] settask
 
   Read waypoint names from successive lines of STDIN and store the resulting
   route as the competition route on the device, replacing any existing
   competition route. This is equivalent to using a name of COMPETITION-ROUTE
-  with the putroute subcommand.
+  with the setroute subcommand.
 
 Usage: compeowpt [-d PORT] delroute NAME
 

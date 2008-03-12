@@ -126,7 +126,7 @@ sub clearroutes($) {
   request $fh, 'PBRRTX,,';
 }
 
-sub putroute($$) {
+sub setroute($$) {
   my ($fh, $id) = (shift, undef);
   my $name = sprintf '%-17.17s', shift;
 
@@ -162,8 +162,8 @@ Usage: compeowpt [-d PORT] [list]         list waypoints stored on device
        compeowpt [-d PORT] listroutes     list routes stored on device
        compeowpt [-d PORT] getroute NAME  read route NAME from device
        compeowpt [-d PORT] gettask        read competition route from device
-       compeowpt [-d PORT] putroute NAME  send route NAME to device
-       compeowpt [-d PORT] puttask        send competition route to device
+       compeowpt [-d PORT] setroute NAME  send route NAME to device
+       compeowpt [-d PORT] settask        send competition route to device
        compeowpt [-d PORT] delroute NAME  delete route NAME from device
        compeowpt [-d PORT] clearroutes    delete all routes from device
 Default serial port: $serialport
@@ -212,19 +212,19 @@ if ($command eq 'list' and @ARGV == 0) {
   getroute $fh, $ARGV[0];
 } elsif ($command eq 'gettask' and @ARGV == 0) {
   getroute $fh, 'COMPETITION-ROUTE';
-} elsif ($command eq 'putroute' and @ARGV == 1) {
-  putroute $fh, $ARGV[0];
-} elsif ($command eq 'puttask' and @ARGV == 0) {
-  putroute $fh, 'COMPETITION-ROUTE';
-} elsif ($command eq 'putroute' and @ARGV == 2) {
+} elsif ($command eq 'setroute' and @ARGV == 1) {
+  setroute $fh, $ARGV[0];
+} elsif ($command eq 'settask' and @ARGV == 0) {
+  setroute $fh, 'COMPETITION-ROUTE';
+} elsif ($command eq 'setroute' and @ARGV == 2) {
   if (sysopen STDIN, $ARGV[1], O_RDONLY) {
-    putroute $fh, $ARGV[0];
+    setroute $fh, $ARGV[0];
   } else {
     die "Can't open $ARGV[1]: $!\n";
   }
-} elsif ($command eq 'puttask' and @ARGV == 1) {
+} elsif ($command eq 'settask' and @ARGV == 1) {
   if (sysopen STDIN, $ARGV[0], O_RDONLY) {
-    putroute $fh, 'COMPETITION-ROUTE';
+    setroute $fh, 'COMPETITION-ROUTE';
   } else {
     die "Can't open $ARGV[0]: $!\n";
   }
