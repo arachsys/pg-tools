@@ -1,0 +1,116 @@
+#!/bin/perl -w
+
+use File::Basename;
+use Getopt::Std;
+use List::Util qw(sum);
+use POSIX;
+use XML::Generator;
+use strict;
+
+sub usage() {
+  print STDERR <<"EOF";
+Usage: igctokml [OPTIONS] IGCFILE [IGCFILE]...
+Options:
+  -c COLORS   comma-separated list of AABBGGRR colors for the track lines;
+                by default twelve bright semi-translucent colors are used
+  -g          correct pressure altitude offset using GPS height fixes
+  -G          plot track using just GPS height, ignoring pressure altitudes
+  -s          generate slightly smaller KML by omitting cosmetic whitespace
+  -w WIDTH    plot track lines WIDTH pixels thick; the default width is 2
+EOF
+  exit 1;
+}
+
+sub HELP_MESSAGE { usage; }
+sub VERSION_MESSAGE { usage; }
+
+my @colors = qw(7f0000ff 7f007fff 7f00ffff 7f00ff7f 7f00ff00 7f7fff00
+                7fffff00 7fff7f00 7fff0000 7fff007f 7fff00ff 7f7f00ff);
+my $width = 2;
+
+my %option = ();
+getopts "c:gsw:G", \%option or usage;
+usage unless @ARGV > 0;
+usage if defined $option{c} and $option{c} !~ /^[\da-f]+(\s*,\s*[\da-f]+)*$/i;
+usage if defined $option{w} and $option{w} !~ /^\d+$/;
+
+@colors = split /\s*,\s*/, lc $option{c} if defined $option{c};
+$width = $option{w} if defined $option{w};
+
+my $xml = XML::Generator->new(
+  conformance => 'strict',
+  encoding => 'UTF-8',
+  escape => 'always',
+  namespace => ['http://earth.google.com/kml/2.2'],
+  pretty => $option{s} ? 0 : 2
+);
+
+my @tracks;
+foreach my $file (@ARGV) {
+  next unless sysopen FILE, $file, O_RDONLY;
+
+  my $name = basename($file);
+  $name =~ s/.igc$//i;
+  my $color = shift @colors;
+  push @colors, $color;
+
+  my ($start, $finish, $date, @coordinates, @offsets);
+  while (<FILE>) {
+    $date = "20$3-$2-$1" if /^HFDTE(\d{2})(\d{2})(\d{2})/i;
+    warn "$file: Datum is not WGS84; KML track will be inaccurate\n"
+      if /^HFDTM(\d{3})/i and $1 != 100;
+    if (/^B(\d{6})(\d{2})(\d{5})([NS])(\d{3})(\d{5})([EW])([AV])([\d-]{5})(\d{5})/i) {
+      ($start, $finish) = ($start || $1, $1);
+      my $latitude = (uc $4 eq 'N' ? +1 : -1)*($2 + $3/60000.0);
+      my $longitude = (uc $7 eq 'E' ? +1 : -1)*($5 + $6/60000.0);
+      push @coordinates, sprintf "%0.6f,%0.6f,%d", $longitude, $latitude,
+                                 $option{G} ? $10 : $9;
+      push @offsets, $10 - $9 if uc $8 eq 'A';
+    }
+  }
+  next unless defined $date and defined $start and defined $finish;
+  $start = join ':', unpack 'a2a2a2', $start;
+  $finish = join ':', unpack 'a2a2a2', $finish;
+
+  my $hours = substr($finish, 0, 2) - substr($start, 0, 2);
+  my $minutes = substr($finish, 3, 2) - substr($start, 3, 2);
+  my $seconds = substr($finish, 6, 2) - substr($start, 6, 2);
+  ($minutes, $seconds) = ($minutes - 1, $seconds + 60) if $seconds < 0;
+  ($hours, $minutes) = ($hours - 1, $minutes + 60) if $minutes < 0;
+  my $duration = sprintf '%02d:%02d:%02d', $hours, $minutes, $seconds;
+
+  my $description = <<EOF;
+<table>
+  <tr><td>Date:</td><td>$date</td></tr>
+  <tr><td>Start time:</td><td>$start</td></tr>
+  <tr><td>Finish time:</td><td>$finish</td></tr>
+  <tr><td>Duration:</td><td>$duration</td></tr>
+</table>
+EOF
+  $description =~ s/>\s+</></g if $option{s}; $description =~ s/\s+$//;
+
+  if ($option{g} and not $option{G} and @offsets > 0) {
+    my $offset = int sum(@offsets)/@offsets;
+    map { s/(\d+)$/$1 + $offset/e } @coordinates;
+  }
+
+  push @tracks, $xml->Placemark(
+    $xml->name($name),
+    $xml->description($xml->xmlcdata($description)),
+    $xml->styleUrl("#$color"),
+    $xml->LineString(
+      $xml->extrude(0),
+      $xml->tessellate(0),
+      $xml->altitudeMode('absolute'),
+      $xml->coordinates(join ' ', @coordinates)
+    )
+  );
+}
+
+@colors = map {
+  $xml->Style({ id => $_ },
+    $xml->LineStyle($xml->width($width), $xml->color($_)))
+} @colors;
+
+print $xml->xmldecl("standalone", undef),
+      $xml->kml($xml->Document(@colors, @tracks)), "\n";

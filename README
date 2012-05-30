@@ -6,6 +6,9 @@ This is a collection of paragliding-related Perl scripts, including:
   compeo-tools
     interface with Braeuniger/Flytec GPS-varios
 
+  igctokml
+    convert IGC files to KML for Google Maps
+
 
 Contact
 -------
