@@ -3,6 +3,9 @@ pg-tools - miscellaneous paragliding scripts
 
 This is a collection of paragliding-related Perl scripts, including:
 
+  airfilter
+    filter out OpenAir airspace above specified flight level
+
   compeo-tools
     interface with Braeuniger/Flytec GPS-varios
 

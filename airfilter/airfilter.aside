@@ -1,0 +1,36 @@
+#!/bin/perl -w
+
+use strict;
+
+sub emit($$) {
+  my ($ceiling, $stanza) = @_;
+  if ($stanza =~ /^AL (.*)/im and $1 =~ /^FL\s*(\d+)$/i) {
+    return if $1 >= $ceiling;
+  }
+  print $stanza;
+}
+
+if (@ARGV == 0 or $ARGV[0] !~ /^(?:FL)?(\d+)$/) {
+  print STDERR <<EOF;
+Usage: $0 CEILING [FILE]...
+Filter OpenAir data to remove blank lines, comments, and stanzas whose floor
+is at or above the flight level CEILING. For example, using a value of 75 (or
+FL75) for CEILING will remove all data for airspace which does not extend
+below flight level 75. Stanzas whose floor is not expressed as a flight level
+are not filtered, but will be below the transition altitude in any case.
+EOF
+  exit 64;
+}
+
+my ($ceiling, $stanza) = ($1, "");
+while (my $line = <>) {
+  chomp $line;
+  $line =~ s/\s*(\*.*)?$//;
+  $line =~ s/\s+/ /g;
+  if ($line =~ /^AC /) {
+    emit $ceiling, "$stanza\n" if length $stanza;
+    $stanza = "";
+  }
+  $stanza .= "$line\n" if length $line;
+}
+emit $ceiling, $stanza if length $stanza;
